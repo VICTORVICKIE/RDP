@@ -1,4 +1,4 @@
-import { Evaluator } from "./rdp.mjs";
+import { Evaluator } from "./rdp.mts";
 
 const evaluator = new Evaluator();
 const cases: Array<[string, number]> = [
@@ -55,6 +55,7 @@ const cases: Array<[string, number]> = [
     ["100 + 10%", 110],
     ["100 + 10% + 10%", 121],
     ["100 + (100 + 10%)", 210],
+    ["100 + (10% + 10%)", 100.11],
     ["100 + (100 * 2) + 10%", 330],
     ["100 + ((100 * 2) + 10% + (4/2))", 322],
 ];

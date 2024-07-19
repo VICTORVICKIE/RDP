@@ -1,4 +1,4 @@
-import { Evaluator } from "./RDP.mjs";
+import { Evaluator } from "./rdp.mjs";
 
 const evaluator = new Evaluator();
 const cases = [
@@ -55,6 +55,7 @@ const cases = [
     ["100 + 10%", 110],
     ["100 + 10% + 10%", 121],
     ["100 + (100 + 10%)", 210],
+    ["100 + (10% + 10%)", 100.11],
     ["100 + (100 * 2) + 10%", 330],
     ["100 + ((100 * 2) + 10% + (4/2))", 322],
 ];
@@ -74,7 +75,7 @@ for (let i = 0; i < cases.length; i++) {
     console.log("\x1b[36m" + `Input: ${displayInput}`);
     console.log("\x1b[32m" + displayExpected);
 
-    if (actual === expected || (Number.isNaN(actual) === true && Number.isNaN(expected) === true)) {
+    if (actual === expected || Number.isNaN(actual) === Number.isNaN(expected)) {
         console.log("\x1b[32m" + displayActual);
         success++;
     } else {
