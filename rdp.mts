@@ -19,6 +19,11 @@ interface Token {
     value: string | number | null;
 }
 
+function checkParanKind(token: Token, counter: { count: number }) {
+    if (token.kind === "bracket" && token.type === "open") counter.count++;
+    if (token.kind === "bracket" && token.type === "close") counter.count--;
+}
+
 class Lexer {
     private stream: string = "";
     private cursor: number = 0;
@@ -64,8 +69,31 @@ class Lexer {
                 }
 
                 case "%": {
-                    // we convert percentage to prefix unary, A% to %A
-                    tokens.splice(tokens.length - 1, 0, { kind: "operator", type: "percentage", value: this.current });
+                    // we convert percentage to prefix unary, expr% to %expr
+                    const prev = tokens[tokens.length - 1];
+                    const token = {
+                        kind: "operator",
+                        type: "percentage",
+                        value: this.current,
+                    };
+
+                    if (prev === undefined) {
+                        tokens.push({ kind: "invalid", type: "unknown", value: this.current });
+                    } else if (prev.kind === "operand" || prev.type === "percentage") {
+                        tokens.splice(tokens.length - 1, 0, token);
+                    } else if (prev.type === "close") {
+                        let counter = { count: -1 }; // we already checked closing above
+                        for (let off = 2; off <= tokens.length; ++off) {
+                            const bound = tokens[tokens.length - off];
+                            checkParanKind(bound, counter);
+                            if (counter.count === 0) {
+                                tokens.splice(tokens.length - off, 0, token);
+                                break;
+                            }
+                        }
+                    } else {
+                        tokens.push({ kind: "invalid", type: "unknown", value: this.current });
+                    }
                     this.cursor++;
                     break;
                 }
@@ -77,8 +105,11 @@ class Lexer {
                 }
 
                 case "(":
+                    tokens.push({ kind: "bracket", type: "open", value: this.current });
+                    this.cursor++;
+                    break;
                 case ")": {
-                    tokens.push({ kind: "separator", type: "bracket", value: this.current });
+                    tokens.push({ kind: "bracket", type: "close", value: this.current });
                     this.cursor++;
                     break;
                 }
@@ -138,12 +169,11 @@ class Parser {
     }
 
     private countParanthesis(tokens: Token[]) {
-        let count = 0;
+        const counter = { count: 0 };
         for (const token of tokens) {
-            if (token.type === "bracket" && token.value === "(") count++;
-            if (token.type === "bracket" && token.value === ")") count--;
+            checkParanKind(token, counter);
         }
-        return count;
+        return counter.count;
     }
 
     private isValidParanthesis(): boolean {
@@ -161,7 +191,7 @@ class Parser {
     private replaceLaymanPercentage(): void {
         const lexer = new Lexer();
         // console.log("before:", this.tokens);
-        while (this.current.value !== null) {
+        while (this.current && this.current.value !== null) {
             if (this.current.type !== "percentage") {
                 this.cursor++;
                 continue;
@@ -176,23 +206,41 @@ class Parser {
                 continue;
             }
 
-            const substitute = `) * (1 ${prev.value} ${next.value}%)`;
-            const replacement = lexer.tokenize(substitute, false);
-
             const rightTokens = this.tokens.slice(this.cursor + 1);
             const leftTokens = this.tokens.slice(0, this.cursor);
+
+            let substitute = "";
+            let count = 0;
+            if (next.type === "number") {
+                count = 3; // + % num
+                substitute = `) * (1 ${prev.value} ${next.value}%)`;
+            } else if (next.type == "open") {
+                let counter = { count: 1 };
+                let operand_idx = 1;
+                count = 4; // + % ( )
+                substitute = `) ${prev.value} (`;
+                while (operand_idx < rightTokens.length && counter.count !== 0) {
+                    checkParanKind(rightTokens[operand_idx], counter);
+                    substitute += `${rightTokens[operand_idx].value}`;
+                    operand_idx += 1;
+                    count += 1; // token
+                }
+                substitute += `%))`;
+            }
+
+            const replacement = lexer.tokenize(substitute, false);
+            this.tokens.splice(this.cursor - 1, count, ...replacement);
+
             const right = this.countParanthesis(rightTokens);
             const left = this.countParanthesis(leftTokens);
 
-            this.tokens.splice(this.cursor - 1, 3, ...replacement);
             if (left !== 0 && right !== 0) {
-                let count = 0;
+                let counter = { count: 0 };
                 for (let i = leftTokens.length - 1; i > 0; --i) {
                     const token = leftTokens[i];
-                    if (token.type === "bracket" && token.value === "(") count++;
-                    if (token.type === "bracket" && token.value === ")") count--;
+                    checkParanKind(token, counter);
 
-                    if (count > 0) {
+                    if (counter.count > 0) {
                         this.tokens.splice(i, 0, lexer.tokenize("(", false)[0]);
                         break;
                     }
@@ -278,7 +326,7 @@ class Parser {
             return token;
         }
 
-        if (this.current.type === "bracket") {
+        if (this.current.kind === "bracket" && this.current.type === "open") {
             this.cursor++; // (
             let expr = this.parseExpr();
             this.cursor++; // )
